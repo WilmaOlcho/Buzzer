@@ -3,36 +3,86 @@ from PyQt6.QtCore import Qt
 import pyaudio
 import numpy as np
 
+class ScrollStaff(QtWidgets.QScrollArea):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.staff = Staff(self.parent())
+        self.setWidgetResizable(True)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setWidget(self.staff)
+
+    @property
+    def pause_mode(self):
+        return self.staff.pause_mode
+    
+    @pause_mode.setter
+    def pause_mode(self, value):
+        self.staff.pause_mode = value
+
+    def dot(self):
+        self.staff.dot()
+
+    def mol(self):
+        self.staff.mol()
+
+    def dur(self):
+        self.staff.dur()
+    
+
+    
+
+
 class Staff(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Staff")
-        self.setGeometry(100, 100, 600, 400)
         self.layout = QtWidgets.QHBoxLayout()
         self.setLayout(self.layout)
+        self.setMouseTracking(True)
+        self.mousePressEvent = self.clickEvent
+        self.pause_mode = False
 
-    def paintEvent(self, event):
-        painter = QtGui.QPainter(self)
-        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 1))
-        for i in range(1,6,1):
-            y = (i + 1) * 10
-            painter.drawLine(0, y, self.width(), y)
-        # draw the treble clef
-        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 2))
-        painter.drawLine(30, 10, 33, 70)
-        painter.drawArc(23, 40, 16, 18, 0, 180*16)
-        painter.drawArc(23, 40, 16, 13, 180*16, 45*16)
-        painter.drawArc(16, 40, 22, 20, 180*16, 210*16)
-        painter.drawArc(16, 40, 22, 20, 135*16, 45*16)
-        painter.drawLine(18, 45, 35, 10)
-        painter.drawArc(30, 5, 5, 5, 0, 180*16)
-        painter.drawArc(28, 68, 5, 5, 180*16, 180*16)
+    def extractYFromNoteName(self, G4_pos, staf_height, note_name):
+        y = G4_pos
+        staf_height /= 2
+        match note_name:
+            case 'E3': y += staf_height * 9
+            case 'F3': y += staf_height * 8
+            case 'G3': y += staf_height * 7
+            case 'A3': y += staf_height * 6
+            case 'B3': y += staf_height * 5
+            case 'C4': y += staf_height * 4
+            case 'D4': y += staf_height * 3
+            case 'E4': y += staf_height * 2
+            case 'F4': y += staf_height
+            case 'G4': pass
+            case 'A4': y -= staf_height
+            case 'B4': y -= staf_height * 2
+            case 'C5': y -= staf_height * 3
+            case 'D5': y -= staf_height * 4
+            case 'E5': y -= staf_height * 5
+            case 'F5': y -= staf_height * 6
+            case 'G5': y -= staf_height * 7
+            case 'A5': y -= staf_height * 8
+            case 'B5': y -= staf_height * 9
+        return int(y)
 
-        # draw the notes
+    def drawNotes(self, painter, G4_pos, staf_height):
         skip = 0
-        for i, note in enumerate(self.parent().sound.notes):
+        parent = self.parent().parent().parent()
+        for i, note in enumerate(parent.sound.notes):
             note_name, note_duration = note
-            shift = 70 + (i+skip) * 20
+            dur = note_name.find('#') != -1
+            mol = note_name.find('b') != -1
+            dot = isinstance(note_duration, float)
+            note_duration = int(note_duration)
+            note_name = note_name.replace('#', '').replace('b', '')
+            y = self.extractYFromNoteName(G4_pos,staf_height,note_name)
+            shift = 60 + (i-skip) * 45
+            if dot:
+                painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 1))
+                painter.setBrush(QtGui.QBrush(QtGui.QColorConstants.Black))
+                painter.drawEllipse(shift+18, y+4, 3, 3)
             if note_name == 'P':
                 match note_duration:
                     case 1:
@@ -42,80 +92,254 @@ class Staff(QtWidgets.QWidget):
                         painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 4))
                         painter.drawLine(shift, 39, shift + 8, 39)
                     case 4:
-                        pass #TODO draw quarter pause
+                        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 2))
+                        painter.drawLine(shift, 30, shift + 5, 36)
+                        painter.drawLine(shift+5, 36, shift, 42)
+                        painter.drawLine(shift, 42, shift+5, 48)
+                        painter.drawArc(shift,48,5,5,90*16,150*16)
                     case 8:
-                        pass #TODO draw eighth pause
+                        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 1))
+                        painter.drawLine(shift, 48, shift + 5, 30)
+                        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 2))
+                        painter.drawArc(shift,30,5,3,180*16,180*16)
                     case 16:
-                        pass #TODO draw sixteenth pause
+                        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 1))
+                        painter.drawLine(shift, 48, shift + 5, 30)
+                        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 2))
+                        painter.drawArc(shift,30,5,3,180*16,180*16)
+                        painter.drawArc(shift-2,35,5,3,180*16,180*16)
                     case 32:
-                        pass #TODO draw thirty-second pause
+                        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 1))
+                        painter.drawLine(shift, 48, shift + 5, 30)
+                        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 2))
+                        painter.drawArc(shift,30,5,3,180*16,180*16)
+                        painter.drawArc(shift-2,35,5,3,180*16,180*16)
+                        painter.drawArc(shift-4,40,5,3,180*16,180*16)
             elif note_name == 'T':
                 skip += 1
+                continue
             else:
-                # draw the note
-                dur = note_name.find('#')
-                mol = note_name.find('b')
-                note_name = note_name.replace('#', '').replace('b', '')
-                y = 0
-                match note_name:
-                    case 'E3':
-                        y = 90
-                    case 'F3':
-                        y = 85
-                    case 'G3':
-                        y = 80
-                    case 'A4':
-                        y = 75
-                    case 'B4':
-                        y = 70
-                    case 'C4':
-                        y = 65
-                    case 'D4':
-                        y = 60
-                    case 'E4':
-                        y = 55
-                    case 'F4':
-                        y = 50
-                    case 'G4':
-                        y = 45
-                    case 'A5':
-                        y = 40
-                    case 'B5':
-                        y = 35
-                    case 'C5':
-                        y = 30
-                    case 'D5':
-                        y = 25
-                    case 'E5':
-                        y = 20
-                    case 'F5':
-                        y = 15
-                    case 'G5':
-                        y = 10
-                    case 'A6':
-                        y = 5
-                    case 'B6':
-                        y = 0
-
+                if dur:
+                    painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 1))
+                    painter.drawLine(shift+18, y-11, shift+18, y-2)
+                    painter.drawLine(shift+21, y-11, shift+21, y-2)
+                    painter.drawLine(shift+15, y-8, shift+24, y-8)
+                    painter.drawLine(shift+15, y-5, shift+24, y-5)
+                if mol:
+                    painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 1))
+                    painter.setFont(QtGui.QFont("Arial", 10))
+                    painter.drawText(shift+15, y-2, 'b')
                 match note_duration:
                     case 1:
                         painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 2))
                         painter.drawEllipse(shift, y, 15, 10)
-                        
                     case 2:
-                        pass #TODO draw half note
+                        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 2))
+                        painter.drawEllipse(shift, y, 15, 10)
+                        if y < 45:
+                            painter.drawLine(shift + 15, y + 5, shift + 15, y + 45)
+                        else:
+                            painter.drawLine(shift + 15, y + 5, shift + 15, y - 40)
                     case 4:
-                        pass #TODO draw quarter note
+                        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 2))
+                        painter.setBrush(QtGui.QBrush(QtGui.QColorConstants.Black))
+                        painter.drawEllipse(shift, y, 15, 10)
+                        painter.setBrush(QtGui.QBrush(QtGui.QColorConstants.White))
+                        
+                        if y < 45:
+                            painter.drawLine(shift + 15, y + 5, shift + 15, y + 45)
+                        else:
+                            painter.drawLine(shift + 15, y + 5, shift + 15, y - 40)
                     case 8:
-                        pass #TODO draw eighth note
+                        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 2))
+                        painter.setBrush(QtGui.QBrush(QtGui.QColorConstants.Black))
+                        painter.drawEllipse(shift, y, 15, 10)
+                        painter.setBrush(QtGui.QBrush(QtGui.QColorConstants.White))
+                        if y < 45:
+                            painter.drawLine(shift + 15, y + 5, shift + 15, y + 35)
+                            painter.drawArc(shift, y+5, 30, 30, -90*16, 75*16)
+                        else:
+                            painter.drawLine(shift + 15, y + 5, shift + 15, y - 30)
+                            painter.drawArc(shift, y - 30, 30, 30, 90*16, -75*16)
                     case 16:
-                        pass #TODO draw sixteenth note
+                        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 2))
+                        painter.setBrush(QtGui.QBrush(QtGui.QColorConstants.Black))
+                        painter.drawEllipse(shift, y, 15, 10)
+                        painter.setBrush(QtGui.QBrush(QtGui.QColorConstants.White))
+                        if y < 45:
+                            painter.drawLine(shift + 15, y + 5, shift + 15, y + 35)
+                            painter.drawArc(shift, y, 30, 30, -90*16, 75*16)
+                            painter.drawArc(shift, y+5, 30, 30, -90*16, 75*16)
+                        else:
+                            painter.drawLine(shift + 15, y + 5, shift + 15, y - 30)
+                            painter.drawArc(shift, y - 25, 30, 30, 90*16, -75*16)
+                            painter.drawArc(shift, y - 30, 30, 30, 90*16, -75*16)
                     case 32:
-                        pass #TODO draw thirty-second note
-                    
+                        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 2))
+                        painter.setBrush(QtGui.QBrush(QtGui.QColorConstants.Black))
+                        painter.drawEllipse(shift, y, 15, 10)
+                        painter.setBrush(QtGui.QBrush(QtGui.QColorConstants.White))
+                        if y < 45:
+                            painter.drawLine(shift + 15, y + 5, shift + 15, y + 35)
+                            painter.drawArc(shift, y-5, 30, 30, -90*16, 75*16)
+                            painter.drawArc(shift, y, 30, 30, -90*16, 75*16)
+                            painter.drawArc(shift, y+5, 30, 30, -90*16, 75*16)
+                        else:
+                            painter.drawLine(shift + 15, y + 5, shift + 15, y - 30)
+                            painter.drawArc(shift, y - 20, 30, 30, 90*16, -75*16)
+                            painter.drawArc(shift, y - 25, 30, 30, 90*16, -75*16)
+                            painter.drawArc(shift, y - 30, 30, 30, 90*16, -75*16)
+                    case _:
+                        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Blue, 2))
+                        painter.drawEllipse(shift, y, 15, 10)
+    
+    def drawTrebleClef(self, x, y, painter):
+        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 2))
+        painter.drawLine(x, y, x+3, y+60)
+        painter.drawArc(x-7, y+30, 16, 18, 0, 180*16)
+        painter.drawArc(x-7, y+30, 16, 13, 180*16, 45*16)
+        painter.drawArc(x-14, y+30, 22, 20, 180*16, 210*16)
+        painter.drawArc(x-14, y+30, 22, 20, 135*16, 45*16)
+        painter.drawLine(x-12, y+35, 35, 10)
+        painter.drawArc(x, y-5, 5, 5, 0, 180*16)
+        painter.drawArc(x-2, y+58, 5, 5, 180*16, 180*16)
 
+    def resizeStaff(self):
+        parent = self.parent().parent().parent()
+        sound_length = len(parent.sound.notes) - len(list(filter(lambda x: x[0] == 'T', parent.sound.notes)))
+        width = 60 + sound_length * 45
+        if width < self.width():
+            width = self.width()
+        self.setMinimumWidth(width)
+
+    def drawNoteName(self, painter):
+        parent = self.parent().parent().parent()
+        cursor = self.mapFromGlobal(QtGui.QCursor.pos())
+        note_index = round((cursor.x() - 60) / 45)
+        skips = 0      
+        if note_index < len(parent.sound.notes) and note_index >= 0:
+            for i in range(note_index+1):
+                if parent.sound.notes[i][0] == 'T':
+                    skips += 1  
+            note_index += skips
+            name = parent.sound.notes[note_index][0]
+            name = name.replace('#', '').replace('b', '')
+            pos_y = self.extractYFromNoteName(45,10,name)
+            if cursor.y() > pos_y - 10 and cursor.y() < pos_y + 10:
+                painter.setPen(QtGui.QPen(QtGui.QColorConstants.Red, 1))
+                painter.setFont(QtGui.QFont("Arial", 10))
+                painter.drawText(cursor.x()+5, cursor.y() + 5, name)
+
+    def drawStaff(self, painter):
+        painter.setPen(QtGui.QPen(QtGui.QColorConstants.Black, 1))
+        for i in range(1,6,1):
+            y = (i + 1) * 10
+            painter.drawLine(0, y, self.width(), y)
+
+    def paintEvent(self, event):
+        self.resizeStaff()
+        painter = QtGui.QPainter(self)
+        self.drawStaff(painter)
+        try:
+            self.drawTrebleClef(30, 10, painter)
+            self.drawNotes(painter, 45, 10)
+            self.drawNoteName(painter)
+        except Exception as e:
+            print(f"Error drawing notes: {e}")
         painter.end()
         self.update()
+
+    def noteIndex(self, x):
+        parent = self.parent().parent().parent()
+        note_index = round((x - 60) / 45)
+        skips = 0
+        if note_index < len(parent.sound.notes) and note_index >= 0:
+            for i in range(note_index+1):
+                if parent.sound.notes[i][0] == 'T':
+                    skips += 1  
+            note_index += skips
+        return note_index
+
+    def clickEvent(self, event):
+        parent = self.parent().parent().parent()
+        cursor = self.mapFromGlobal(QtGui.QCursor.pos())
+        note_index = self.noteIndex(cursor.x())
+        if event.button() == Qt.MouseButton.RightButton:    
+                parent.sound.remove_note(note_index)
+                self.update()
+        elif event.button() == Qt.MouseButton.LeftButton:
+            durations = [1, 2, 4, 8, 16, 32]
+            note_name = ''
+            note_duration = 0
+            if note_index >= len(parent.sound.notes):
+                if self.pause_mode:
+                    note_name = 'P'
+                    note_duration = 1
+                else:
+                    note_index = len(parent.sound.notes)
+                    note_name = self.note_from_y(cursor.y())
+                    note_duration = 1
+                parent.sound.add_note((note_name, note_duration))
+                self.update()
+            else:
+                if self.pause_mode:
+                    note_name = 'P'
+                else:
+                    note_name = self.note_from_y(cursor.y())
+                duration_index = durations.index(parent.sound.notes[note_index][1])
+                if duration_index == len(durations) - 1:
+                    duration_index = 0
+                else:
+                    duration_index += 1
+                note_duration = durations[duration_index]
+                parent.sound.notes[note_index] = (note_name, note_duration)
+                self.update()
+
+    def dot(self):
+        parent = self.parent().parent().parent()
+        note_index = self.noteIndex(self.mapFromGlobal(QtGui.QCursor.pos()).x())
+        if note_index < len(parent.sound.notes):
+            note_name, note_duration = parent.sound.notes[note_index]
+            if isinstance(note_duration, float):
+                note_duration = int(note_duration)
+            elif isinstance(note_duration, int):
+                note_duration = float(note_duration)
+            parent.sound.notes[note_index] = (note_name, note_duration)
+    
+    def mol(self):
+        parent = self.parent().parent().parent()
+        note_index = self.noteIndex(self.mapFromGlobal(QtGui.QCursor.pos()).x())
+        if note_index < len(parent.sound.notes):
+            note_name, note_duration = parent.sound.notes[note_index]
+            note_name = note_name.replace('#', 'b')
+            if note_name.find('b') == -1:
+                note_name += 'b'
+            else:
+                note_name = note_name.replace('b', '')
+            parent.sound.notes[note_index] = (note_name, note_duration)
+
+    def dur(self):
+        parent = self.parent().parent().parent()
+        note_index = self.noteIndex(self.mapFromGlobal(QtGui.QCursor.pos()).x())
+        if note_index < len(parent.sound.notes):
+            note_name, note_duration = parent.sound.notes[note_index]
+            note_name = note_name.replace('b', '#')
+            if note_name.find('#') == -1:
+                note_name += '#'
+            else:
+                note_name = note_name.replace('#', '')
+            parent.sound.notes[note_index] = (note_name, note_duration)
+
+    def note_from_y(self, y):
+        staf_height = 10
+        G4_pos = 45
+        pos = round((y - G4_pos) / staf_height*2)
+        notes = {
+            -9: 'B5', -8: 'A5', -7: 'G5', -6: 'F5', -5: 'E5', -4: 'D5',
+            -3: 'C5', -2: 'B4', -1: 'A4', 0: 'G4', 1: 'F4', 2: 'E4',
+            3: 'D4', 4: 'C4', 5: 'B3', 6: 'A3', 7: 'G3', 8: 'F3', 9: 'E3'
+        }
+        return notes.get(pos, 'G4')
 
 class Sound:
     note_freqs = {
@@ -243,8 +467,7 @@ class TopWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self.setWindowTitle("Top Widget")
         self.layout = QtWidgets.QHBoxLayout()
-        self._parent = parent
-
+        
         self.import_button = QtWidgets.QPushButton("Import")
         self.import_button.clicked.connect(self.import_notes)
         self.layout.addWidget(self.import_button)
@@ -289,20 +512,20 @@ class TopWidget(QtWidgets.QWidget):
                 if char == ',':
                     notes_text = notes_text[1:]
             
-            self._parent.sound.clear_notes()
+            self.parent().sound.clear_notes()
             for note in notes:
                 if note[1].find('.') > 0:
                     note[1] = float(note[1])
                 else:
                     note[1] = int(note[1])
-                self._parent.sound.add_note(tuple(note))
+                self.parent().sound.add_note(tuple(note))
             self.parent().staff.update()
 
     def export_notes(self):
         export_dialog = QtWidgets.QInputDialog(self)
         export_dialog.setWindowTitle("Export Notes")
         export_dialog.setLabelText("Copy the notes to export")
-        export_dialog.setTextValue(str(self._parent.sound.notes))
+        export_dialog.setTextValue(str(self.parent().sound.notes))
         export_dialog.setOkButtonText("Copy")
         export_dialog.setCancelButtonText("Close")
 
@@ -312,10 +535,10 @@ class TopWidget(QtWidgets.QWidget):
             clipboard.setText(notes_text)
 
     def play_notes(self):
-        self._parent.sound.play()
+        self.parent().sound.play()
 
     def clear_notes(self):
-        self._parent.sound.clear_notes()
+        self.parent().sound.clear_notes()
 
 class Creator(QtWidgets.QWidget):
     def __init__(self, parent=None):
@@ -326,13 +549,35 @@ class Creator(QtWidgets.QWidget):
         self.sound = Sound(self)
 
         self.top = TopWidget(self)
-        self.staff = Staff(self)
+        self.staff = ScrollStaff(self)
         self.layout.addWidget(self.top, alignment=Qt.AlignmentFlag.AlignTop)
         self.layout.addWidget(self.staff)
         
 
         # Set the layout for the widget
         self.setLayout(self.layout)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.close()
+        elif event.key() == Qt.Key.Key_Space:
+            self.staff.pause_mode = not self.staff.pause_mode
+            self.staff.update()
+        elif event.key() == Qt.Key.Key_Return:
+            self.sound.play()
+        elif event.key() == Qt.Key.Key_P:
+            self.staff.pause_mode = not self.staff.pause_mode
+            self.staff.update()
+        elif event.key() == 46:  # '.' key
+            self.staff.dot()
+            self.staff.update()
+        elif event.key() == Qt.Key.Key_B:
+            self.staff.mol()
+            self.staff.update()
+        elif event.key() == Qt.Key.Key_D:
+            self.staff.dur()
+            self.staff.update()
+        super().keyPressEvent(event)
 
 
 if __name__ == "__main__":
