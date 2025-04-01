@@ -41,7 +41,7 @@ class Buzzer:
     def note_duration(self, duration: int|float = 8) -> int:
         if isinstance(duration,float):
             return self.note_duration(int(duration))+self.note_duration(int(duration*2))
-        return int(60000 / self.bpm / duration)*3
+        return int(60000 / self.bpm / duration * 4)
         
     def extract_bench_duration(self, melody: list) -> list[int]:
         duration = 0
